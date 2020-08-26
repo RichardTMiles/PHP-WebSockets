@@ -54,7 +54,7 @@ $user_colour = array_rand($colours);
     $(document).ready(function () {
         //create a new WebSocket object.
         let wsUri = "ws://localhost:8080/test.php";
-        websocket = new WebSocket(wsUri);
+        let websocket = new WebSocket(wsUri);
 
         websocket.onopen = function (ev) { // connection is open
             $('#message_box').append("<div class=\"system_msg\">Connected!</div>"); //notify user
@@ -77,7 +77,7 @@ $user_colour = array_rand($colours);
             let msg = {
                 message: mymessage,
                 name: myname,
-                color: '<?php echo $colours[$user_colour]; ?>'
+                color: '<?=$colours[$user_colour] ?>'
             };
             //convert and send data to server
             websocket.send(JSON.stringify(msg));

@@ -14,7 +14,7 @@ const PASS = 'Smokey';
 
 
 if (SSL) {
-    /* This snippit would be used to generate your own pem file for the secure wss:// protocal 
+    /* This snippet would be used to generate your own pem file for the secure wss:// protocal
     
     $certPath = '/key.pem';
     $pemPassPhrase = 'fdsafsa';
@@ -87,7 +87,8 @@ if (!$socket) {
             } else {
 
                 $data = decode($connection);
-                var_dump($data);
+
+                # var_dump($data);
 
                 switch ($data['opcode']) {
                     case CLOSE:
@@ -101,14 +102,18 @@ if (!$socket) {
                         break;
 
                     case TEXT:
-                        print 'The client has sent :';
-                        var_dump($data['payload']);
-                        @fwrite($connection, encode( [
-                                'type'=>'usermsg',
-                                'name'=>$data['payload']->name,
-                                'message'=>$data['payload']->message,
-                                'color'=>$data['payload']->color
-                        ]));
+                        print $data['payload']->name . ', has sent :: ' . $data['payload']->message . PHP_EOL;
+
+                        foreach ($master as $user) {
+                            //  connection === $user and continue;  // but we dont hav this optimization on the front end
+
+                            @fwrite($user, encode([
+                                'type' => 'usermsg',
+                                'name' => $data['payload']->name,
+                                'message' => $data['payload']->message,
+                                'color' => $data['payload']->color
+                            ]));
+                        }
                         break;
                     default:
                         break;
