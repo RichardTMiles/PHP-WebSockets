@@ -13,7 +13,7 @@ ready, as input is not validated for XSS attacks.
 To run the demo use the following commands in a shell prompt 
 
 ## starts the websocket server on port 8080
->>   sudo ./server.php  
+>>   sudo php server.php  
 
 Then in a new window navigate to the same folder and start the client server
 
@@ -23,6 +23,6 @@ Then in a new window navigate to the same folder and start the client server
 This will allow you to visit the chat demo on your local web browser
 
 ## navigates to php's built in webserver
-http://localhost:8888/    
+http://localhost:7777/    
 
 ^ Throw a star up there!

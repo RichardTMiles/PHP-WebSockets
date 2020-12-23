@@ -51,63 +51,64 @@ $user_colour = array_rand($colours);
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
 
 <script language="javascript" type="text/javascript">
-    $(document).ready(function () {
-        //create a new WebSocket object.
-        let wsUri = "ws://localhost:8080/test.php";
-        let websocket = new WebSocket(wsUri);
+  $(document).ready(function () {
 
-        websocket.onopen = function (ev) { // connection is open
-            $('#message_box').append("<div class=\"system_msg\">Connected!</div>"); //notify user
-        };
+    //create a new WebSocket object.
+    let wsUri = "ws://127.0.0.1:8888/ws";
+    let websocket = new WebSocket(wsUri);
 
-        $('#send-btn').click(function () { //use clicks message send button
-            let mymessage = $('#message').val(), //get message text
-                myname = $('#name').val(); //get user name
+    websocket.onopen = function (ev) { // connection is open
+      $('#message_box').append("<div class=\"system_msg\">Connected!</div>"); //notify user
+    };
 
-            if (myname === "") { //empty name?
-                alert("Enter your Name please!");
-                return;
-            }
-            if (mymessage === "") { //emtpy message?
-                alert("Enter Some message Please!");
-                return;
-            }
+    $('#send-btn').click(function () { //use clicks message send button
+      let mymessage = $('#message').val(), //get message text
+        myname = $('#name').val(); //get user name
 
-            //prepare json data
-            let msg = {
-                message: mymessage,
-                name: myname,
-                color: '<?=$colours[$user_colour] ?>'
-            };
-            //convert and send data to server
-            websocket.send(JSON.stringify(msg));
-        });
+      if (myname === "") { //empty name?
+        alert("Enter your Name please!");
+        return;
+      }
+      if (mymessage === "") { //emtpy message?
+        alert("Enter Some message Please!");
+        return;
+      }
 
-        //#### Message received from server?
-        websocket.onmessage = function (ev) {
-            let msg = JSON.parse(ev.data), //PHP sends Json data
-             type = msg.type, //message type
-             umsg = msg.message, //message text
-             uname = msg.name, //user name
-             ucolor = msg.color; //color
-
-            if (type === 'usermsg') {
-                $('#message_box').append("<div><span class=\"user_name\" style=\"color:#" + ucolor + "\">" + uname + "</span> : <span class=\"user_message\">" + umsg + "</span></div>");
-            }
-            if (type === 'system') {
-                $('#message_box').append("<div class=\"system_msg\">" + umsg + "</div>");
-            }
-
-            $('#message').val(''); //reset text
-        };
-
-        websocket.onerror = function (ev) {
-            $('#message_box').append("<div class=\"system_error\">Error Occurred - " + ev.data + "</div>");
-        };
-        websocket.onclose = function (ev) {
-            $('#message_box').append("<div class=\"system_msg\">Connection Closed</div>");
-        };
+      //prepare json data
+      let msg = {
+        message: mymessage,
+        name: myname,
+        color: '<?=$colours[$user_colour] ?>'
+      };
+      //convert and send data to server
+      websocket.send(JSON.stringify(msg));
     });
+
+    //#### Message received from server?
+    websocket.onmessage = function (ev) {
+      let msg = JSON.parse(ev.data), //PHP sends Json data
+        type = msg.type, //message type
+        umsg = msg.message, //message text
+        uname = msg.name, //user name
+        ucolor = msg.color; //color
+
+      if (type === 'usermsg') {
+        $('#message_box').append("<div><span class=\"user_name\" style=\"color:#" + ucolor + "\">" + uname + "</span> : <span class=\"user_message\">" + umsg + "</span></div>");
+      }
+      if (type === 'system') {
+        $('#message_box').append("<div class=\"system_msg\">" + umsg + "</div>");
+      }
+
+      $('#message').val(''); //reset text
+    };
+
+    websocket.onerror = function (ev) {
+      $('#message_box').append("<div class=\"system_error\">Error Occurred - " + ev.data + "</div>");
+    };
+    websocket.onclose = function (ev) {
+      $('#message_box').append("<div class=\"system_msg\">Connection Closed</div>");
+    };
+  });
 </script>
 <div class="chat_wrapper">
     <div class="message_box" id="message_box"></div>
