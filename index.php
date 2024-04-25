@@ -1,123 +1,663 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset='UTF-8'/>
-    <style type="text/css">
-        <!--
-        .chat_wrapper {
-            width: 500px;
-            margin-right: auto;
-            margin-left: auto;
-            background: #CCCCCC;
-            border: 1px solid #999999;
-            padding: 10px;
-            font: 12px 'lucida grande', tahoma, verdana, arial, sans-serif;
-        }
-
-        .chat_wrapper .message_box {
-            background: #FFFFFF;
-            height: 150px;
-            overflow: auto;
-            padding: 10px;
-            border: 1px solid #999999;
-        }
-
-        .chat_wrapper .panel input {
-            padding: 2px 2px 2px 5px;
-        }
-
-        .system_msg {
-            color: #BDBDBD;
-            font-style: italic;
-        }
-
-        .user_name {
-            font-weight: bold;
-        }
-
-        .user_message {
-            color: #88B6E0;
-        }
-
-        -->
-    </style>
-</head>
-<body>
 <?php
-$colours = array('007AFF', 'FF7000', 'FF7000', '15E25F', 'CFC700', 'CFC700', 'CF1100', 'CF00BE', 'F00');
-$user_colour = array_rand($colours);
-?>
 
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
 
-<script language="javascript" type="text/javascript">
-  $(document).ready(function () {
+if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
+    && str_contains($_SERVER['HTTP_UPGRADE'] ?? '', 'websocket'))) {
 
-    //create a new WebSocket object.
-    let wsUri = "ws://127.0.0.1:8888/ws";
-    let websocket = new WebSocket(wsUri);
+    include 'index.html';
 
-    websocket.onopen = function (ev) { // connection is open
-      $('#message_box').append("<div class=\"system_msg\">Connected!</div>"); //notify user
-    };
+    exit(0);
 
-    $('#send-btn').click(function () { //use clicks message send button
-      let mymessage = $('#message').val(), //get message text
-        myname = $('#name').val(); //get user name
+}
 
-      if (myname === "") { //empty name?
-        alert("Enter your Name please!");
-        return;
-      }
-      if (mymessage === "") { //emtpy message?
-        alert("Enter Some message Please!");
-        return;
-      }
 
-      //prepare json data
-      let msg = {
-        message: mymessage,
-        name: myname,
-        color: '<?=$colours[$user_colour] ?>'
-      };
-      //convert and send data to server
-      websocket.send(JSON.stringify(msg));
-    });
+/**
+ * @https://www.php.net/manual/en/reserved.variables.argv.php
+ * @link https://www.php.net/manual/en/language.oop5.anonymous.php
+ * @var array $argv
+ */
+new class($argv ??= []) {
 
-    //#### Message received from server?
-    websocket.onmessage = function (ev) {
-      let msg = JSON.parse(ev.data), //PHP sends Json data
-        type = msg.type, //message type
-        umsg = msg.message, //message text
-        uname = msg.name, //user name
-        ucolor = msg.color; //color
+    public const TEXT = 0x1;
+    public const BINARY = 0x2;
+    public const CLOSE = 0x8;
+    public const PING = 0x9;
+    public const PONG = 0xa;
+    public const HOST = '0.0.0.0';
+    public const PORT = 8888;
+    public static bool $SSL = false;
+    public const CERT = '/cert.pem';
+    public const PASS = 'Smokey';
 
-      if (type === 'usermsg') {
-        $('#message_box').append("<div><span class=\"user_name\" style=\"color:#" + ucolor + "\">" + uname + "</span> : <span class=\"user_message\">" + umsg + "</span></div>");
-      }
-      if (type === 'system') {
-        $('#message_box').append("<div class=\"system_msg\">" + umsg + "</div>");
-      }
 
-      $('#message').val(''); //reset text
-    };
+    public function __construct(array $argv)
+    {
 
-    websocket.onerror = function (ev) {
-      $('#message_box').append("<div class=\"system_error\">Error Occurred - " + ev.data + "</div>");
-    };
-    websocket.onclose = function (ev) {
-      $('#message_box').append("<div class=\"system_msg\">Connection Closed</div>");
-    };
-  });
-</script>
-<div class="chat_wrapper">
-    <div class="message_box" id="message_box"></div>
-    <div class="panel">
-        <input type="text" name="name" id="name" placeholder="Your Name" maxlength="10" style="width:20%"/>
-        <input type="text" name="message" id="message" placeholder="Message" maxlength="80" style="width:60%"/>
-        <button id="send-btn">Send</button>
-    </div>
-</div>
+        if (PHP_SAPI !== 'cli'
+            && str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
+            && str_contains($_SERVER['HTTP_UPGRADE'] ?? '', 'websocket')) {
 
-</body>
-</html>
+            // Here you can handle the WebSocket upgrade logic
+            self::handleSingleUserConnections();
+
+            exit(0);
+
+        }
+
+        while (!empty($argv)) {
+            switch (strtolower(array_shift($argv))) {
+                case '-b':
+                case '--buildCertificate':
+                    self::buildCertificate();
+                    exit(0);
+                case '-s':
+                case '--ssl':
+                    self::colorCode('ssl');
+                    break;
+                default:
+
+            }
+        }
+
+        if (self::$SSL) {
+
+            $context = stream_context_create(['ssl' => ['local_cert' => self::CERT,
+                'passphrase' => self::PASS,
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true,
+                'verify_depth' => 0]]);
+
+            $protocol = 'ssl';
+
+        } else {
+
+            $context = stream_context_create();
+
+            $protocol = 'tcp';
+
+        }
+
+        $socket = stream_socket_server("$protocol://" . self::HOST . ':' . self::PORT, $errorNumber, $errorString, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
+
+        if (!$socket) {
+            echo "$errorString ($errorNumber)<br />\n";
+        } else {
+            $master[] = $socket;
+            while (true) {
+                $read = $master;
+
+                $mod_fd = stream_select($read, $_w, $_e, 5);  // returns number of file descriptors modified
+
+                if ($mod_fd === 0) {
+                    self::colorCode('There are (' . (count($master) - 1) . ') Connected Resources. Waiting for a signal.');
+                    continue;
+                }
+
+                foreach ($read as $connection) {
+
+                    if ($connection === $socket) { // accepting a new connection?
+                        self::colorCode('Accepting new user connection!');
+
+                        if (($new_user_connection = stream_socket_accept($connection, ini_get('default_socket_timeout'), $peerName)) === false) {
+                            self::colorCode('Failed to accept new user connection!');
+                            continue;
+                        }
+
+                        if (!self::handshake($new_user_connection)) {
+                            if (!is_resource($new_user_connection)) {
+                                self::colorCode('Connection no longer active resource.', 'red');
+                            } else {
+                                if (!fclose($new_user_connection)) {
+                                    self::colorCode('Failed to close resource connection.', 'red');
+                                }
+                            }
+                        } else {
+                            fwrite($new_user_connection, self::encode('Hello! The time is ' . date('n/j/Y g:i a') . "\n"));
+                            $master[] = $new_user_connection;
+                        }
+                        continue;
+                    }
+
+                    $data = self::decode($connection);
+
+                    switch ($data['opcode']) {
+                        default:
+                        case self::BINARY:
+                        case self::CLOSE:
+                            $key_to_del = array_search($connection, $master, false);
+                            @fclose($connection);
+                            unset($master[$key_to_del]);
+                            break;
+
+                        case self::PING :
+                            @fwrite($connection, self::encode('', self::PONG));
+                            break;
+
+                        case self::TEXT:
+                            $PrintPayload = print_r($data['payload'], true);
+                            self::colorCode("The following was received ($PrintPayload)");
+
+                            print $data['payload']['name'] . ', has sent :: ' . $data['payload']['message'] . PHP_EOL;
+
+                            foreach ($master as $user) {
+                                //  connection === $user and continue;  // but we dont hav this optimization on the front end
+                                @fwrite($user, self::encode([
+                                    'type' => 'usermsg',
+                                    'name' => $data['payload']['name'],
+                                    'message' => $data['payload']['message'],
+                                    'color' => $data['payload']['color']
+                                ]));
+                            }
+                            break;
+                    }
+                }
+            }
+        }
+    }
+
+    public static function outputBufferWebSocketEncoder(): callable
+    {
+        // @note - https://www.php.net/manual/en/function.ob-get-level.php comments
+        // my error handler is set to stop at 1, but here I believe clearing all is the only way.
+        // Php may start with an output buffer enabled but we need to clear that to in oder to send real time data.
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+
+        ob_start(new class(self::class) {
+
+            public static mixed $that;
+
+            public function __construct($that)
+            {
+                self::$that = $that;
+            }
+
+            public function __invoke($part, $flag): string
+            {
+                $flag_sent = match ($flag) {
+                    PHP_OUTPUT_HANDLER_START => "PHP_OUTPUT_HANDLER_START ($flag)",
+                    PHP_OUTPUT_HANDLER_CONT => "PHP_OUTPUT_HANDLER_CONT ($flag)",
+                    PHP_OUTPUT_HANDLER_END => "PHP_OUTPUT_HANDLER_END ($flag)",
+                    default => "Flag is not a constant ($flag)",
+                };
+
+                self::$that::colorCode("(" . __METHOD__ . ") Output Handler: $flag_sent");
+
+                return self::$that::encode($part . PHP_EOL);
+            }
+
+            public function __destruct()
+            {
+                self::$that::colorCode("Ending WebSocket Encoding Buffer.");
+            }
+        });
+
+        ob_implicit_flush();
+
+        // these function calls are dynamic to whatever the current buffer is.
+        return static function (): void {
+
+            if (ob_get_level() === 0) {
+                self::outputBufferWebSocketEncoder();
+                return;
+            }
+
+            if (0 === ob_get_length()) {
+                return;
+            }
+
+            // this will also remove the buffer, but IS NEEDED.
+            // ob_flush will not guarantee the buffer runs through the ob_start callback.
+            if (!ob_get_flush()) {
+
+                throw new Error('Failed to flush the output buffer.');
+
+            }
+
+            // my first thought was to return this method call, but it is not needed.
+            self::outputBufferWebSocketEncoder();
+
+        };
+
+    }
+
+    public static function handleSingleUserConnections(): void
+    {
+
+        if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
+            && str_contains($_SERVER['HTTP_UPGRADE'] ?? '', 'websocket'))) {
+
+            return;
+
+        }
+
+        if (!defined('STDOUT')) {
+
+            define('STDOUT', fopen('php://stdout', 'wb'));
+
+        }
+
+        // get all headers has a polyfill in our function.php
+        $headers = getallheaders();
+
+        self::handshake(STDOUT, $headers);
+
+        $flush = self::outputBufferWebSocketEncoder();
+
+        print posix_getpid() . PHP_EOL;
+
+        $flush();
+
+        // Here you can handle the WebSocket upgrade logic
+        $websocket = apache_websocket_stream();
+
+        if (!is_resource($websocket)) {
+
+            throw new Error('INPUT is not a valid resource');
+
+        }
+
+        $loop = 0;
+
+        while (true) {
+
+            try {
+
+                ++$loop;
+
+                if (!is_resource($websocket)) {
+
+                    throw new Error('STDIN is not a valid resource');
+
+                }
+
+                $flush();
+
+                $read = [$websocket];
+
+                $number = stream_select($read, $write, $error, 10);
+
+                if ($number === 0) {
+
+                    self::colorCode("No streams are requesting to be processed. (loop: $loop; )", 'cyan');
+
+                    continue;
+
+                }
+
+                self::colorCode("$number, stream(s) are requesting to be processed.");
+
+                foreach ($read as $connection) {
+
+                    if ($connection === $websocket) {
+
+                        $data = self::decode($connection);
+
+                        print_r($data);
+
+                        $flush();
+
+                    }
+
+                }
+
+                sleep(1);
+
+            } catch (Throwable $e) {
+
+                print_r($e);
+
+            }
+
+        }
+
+    }
+
+    public static function handshake($socket, array &$headers = []): bool
+    {
+        $lines = preg_split("/\r\n/", @fread($socket, 4096));
+
+        foreach ($lines as $line) {
+
+            $line = rtrim($line);
+
+            if (preg_match('/\A(\S+): (.*)\z/', $line, $matches)) {
+
+                $headers[$matches[1]] = $matches[2];
+
+            }
+
+        }
+
+        if (!isset($headers['Sec-WebSocket-Key'])) {
+
+            return false;
+
+        }
+
+        // in the spirit of using actual header values
+        // @link https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers
+        // well use warning to store general information
+        $headers['Warning'] = $lines[0] ?? '';
+
+        $_SERVER['HTTP_COOKIE'] = $headers['Cookie'] ?? [];
+
+        $_SERVER['User_Agent'] = $headers['User-Agent'] ?? '';
+
+        $_SERVER['Host'] = $headers['Host'] ?? '';
+
+        $secKey = $headers['Sec-WebSocket-Key'];
+
+        $secAccept = base64_encode(pack('H*', sha1($secKey . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')));
+
+        $response = [
+            "HTTP/1.1 101 Web Socket Protocol Handshake",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            'WebSocket-Origin: ' . $_SERVER['Host'],
+            'WebSocket-Location: ws://' . $_SERVER['Host'] . ':' . $_SERVER['SERVER_PORT'] . '/',
+            "Sec-WebSocket-Accept:$secAccept",
+            // These next two lines are not spec, but through much research and trial and error
+            // You can turn off chunked encoding by setting the content length to 0 and application/octet-stream
+            "Content-Length: 0",
+            "Content-Type: application/octet-stream",
+        ];
+
+        try {
+
+
+            if (STDOUT === $socket) {
+
+                foreach ($response as $line) {
+
+                    header($line);
+
+                }
+
+                flush();
+
+                return true;
+
+            }
+
+            $response = implode("\r\n", $response);
+
+            return fwrite($socket, $response . "\r\n");
+
+        } catch (Exception) {
+
+            return false;
+
+        }
+
+    }
+
+    /**
+     *  0                   1                   2                   3
+     *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+     * +-+-+-+-+-------+-+-------------+-------------------------------+
+     * |F|R|R|R| opcode|M| Payload len |    Extended payload length    |
+     * |I|S|S|S|  (4)  |A|     (7)     |             (16/63)           |
+     * |N|V|V|V|       |S|             |   (if payload len==126/127)   |
+     * | |1|2|3|       |K|             |                               |
+     * +-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+     * |     Extended payload length continued, if payload len == 127  |
+     * + - - - - - - - - - - - - - - - +-------------------------------+
+     * |                               |Masking-key, if MASK set to 1  |
+     * +-------------------------------+-------------------------------+
+     * | Masking-key (continued)       |          Payload Data         |
+     * +-------------------------------- - - - - - - - - - - - - - - - +
+     * :                     Payload Data continued ...                :
+     * + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+     * |                     Payload Data continued ...                |
+     * +---------------------------------------------------------------+
+     * See: https://tools.ietf.org/rfc/rfc6455.txt
+     * or:  http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-10#section-4.2
+     **/
+    public static function encode($message, $opCode = self::TEXT): string
+    {
+
+        $rsv1 = 0x0;
+
+        $rsv2 = 0x0;
+
+        $rsv3 = 0x0;
+
+        $message = is_string($message) ? $message : json_encode($message);
+
+        $length = strlen($message);
+
+        $out = chr((0x1 << 7) | ($rsv1 << 6) | ($rsv2 << 5) | ($rsv3 << 4) | $opCode);
+
+        if (0xffff < $length) {
+
+            $out .= chr(0x7f) . pack('NN', 0, $length);
+
+        } elseif (0x7d < $length) {
+
+            $out .= chr(0x7e) . pack('n', $length);
+
+        } else {
+
+            $out .= chr($length);
+
+        }
+
+        return $out . $message;
+
+    }
+
+    public static function decode($socket): array
+    {
+        if (!$socket || !is_resource($socket)) {
+            return [
+                'opcode' => self::CLOSE,
+                'error' => 'Socket filed pointer failed resource check. Closed.',
+                'payload' => ''
+            ];
+        }
+
+        $out = [];
+
+        $read = fread($socket, 1);
+
+        if (empty($read)) {
+            return [
+                'opcode' => self::CLOSE,
+                'emptyString' => true,
+                'payload' => ''
+            ];
+        }
+
+        self::colorCode("\n\n\n$read\n\n\n", 'blue');
+
+        $handle = ord($read);
+        $out['fin'] = ($handle >> 7) & 0x1;
+        $out['rsv1'] = ($handle >> 6) & 0x1;
+        $out['rsv2'] = ($handle >> 5) & 0x1;
+        $out['rsv3'] = ($handle >> 4) & 0x1;
+        $out['opcode'] = $handle & 0xf;
+
+        if (!\in_array($out['opcode'], [self::TEXT, self::BINARY, self::CLOSE, self::PING, self::PONG], true)) {
+            return [
+                'opcode' => '',
+                'payload' => '',
+                'error' => 'unknown opcode (1003)'
+            ];
+        }
+
+        $handle = ord(fread($socket, 1));
+        $out['mask'] = ($handle >> 7) & 0x1;
+        $out['length'] = $handle & 0x7f;
+        $length = &$out['length'];
+
+        if ($out['rsv1'] !== 0x0 || $out['rsv2'] !== 0x0 || $out['rsv3'] !== 0x0) {
+            return [
+                'opcode' => $out['opcode'],
+                'payload' => '',
+                'error' => 'protocol error (1002)'
+            ];
+        }
+
+        if ($length === 0) {
+            $out['payload'] = '';
+            return $out;
+        }
+
+        if ($length === 0x7e) {
+            $handle = unpack('nl', fread($socket, 2));
+            $length = $handle['l'];
+        } elseif ($length === 0x7f) {
+            $handle = unpack('N*l', fread($socket, 8));
+            $length = $handle['l2'] ?? $length;
+
+            if ($length > 0x7fffffffffffffff) {
+                return [
+                    'opcode' => $out['opcode'],
+                    'payload' => '',
+                    'error' => 'content length mismatch'
+                ];
+            }
+        }
+
+        if ($out['mask'] === 0x0) {
+            $msg = '';
+            $readLength = 0;
+
+            while ($readLength < $length) {
+                $toRead = $length - $readLength;
+                $msg .= fread($socket, $toRead);
+
+                if ($readLength === strlen($msg)) {
+                    break;
+                }
+
+                $readLength = strlen($msg);
+            }
+
+            $out['payload'] = $msg;
+            return $out;
+        }
+
+        $maskN = array_map('ord', str_split(fread($socket, 4)));
+        $maskC = 0;
+
+        $bufferLength = 1024;
+        $message = '';
+
+        for ($i = 0; $i < $length; $i += $bufferLength) {
+            $buffer = min($bufferLength, $length - $i);
+            $handle = fread($socket, $buffer);
+
+            for ($j = 0, $_length = strlen($handle); $j < $_length; ++$j) {
+                $handle[$j] = chr(ord($handle[$j]) ^ $maskN[$maskC]);
+                $maskC = ($maskC + 1) % 4;
+            }
+
+            $message .= $handle;
+        }
+
+        // arrays are faster than objects
+
+        self::colorCode("About to Json Decode The Message :: ($message)", 'yellow');
+
+        $out['payload'] = json_decode($message, true, 512, JSON_THROW_ON_ERROR);
+        return $out;
+    }
+
+    public static function buildCertificate(): void
+    {
+        // This snippet would be used to generate your own pem file for the secure wss:// protocol
+        $certPath = '/key.pem';
+        $pemPassPhrase = 'fdsafsa';
+
+        $certificateData = [
+            'countryName' => 'US',
+            'stateOrProvinceName' => 'TX',
+            'localityName' => 'DALLAS',
+            'organizationName' => 'Miles Systems LLC',
+            'organizationalUnitName' => 'Miles Systems',
+            'commonName' => 'Dick',
+            'emailAddress' => 'Richard@Miles.Systems'
+        ];
+
+        $privateKey = openssl_pkey_new();
+        $certificate = openssl_csr_new($certificateData, $privateKey);
+        $certificate = openssl_csr_sign($certificate, null, $privateKey, 365);
+
+        $pem = [];
+        openssl_x509_export($certificate, $pem[0]);
+        openssl_pkey_export($privateKey, $pem[1], $pemPassPhrase);
+        $pem = implode($pem);
+
+        file_put_contents($certPath, $pem);
+    }
+
+
+    /**
+     * @param string $message
+     * @param string $color
+     * @param bool $exit
+     * @param int $priority
+     * @link https://www.php.net/manual/en/function.syslog.php
+     */
+    public static function colorCode(string $message, string $color = 'green', bool $exit = false, int $priority = LOG_INFO): void
+    {
+
+        $colors = array(
+            // styles
+            // italic and blink may not work depending of your terminal
+            'bold' => "\033[1m%s\033[0m",
+            'dark' => "\033[2m%s\033[0m",
+            'italic' => "\033[3m%s\033[0m",
+            'underline' => "\033[4m%s\033[0m",
+            'blink' => "\033[5m%s\033[0m",
+            'reverse' => "\033[7m%s\033[0m",
+            'concealed' => "\033[8m%s\033[0m",
+            // foreground colors
+            'black' => "\033[30m%s\033[0m",
+            'red' => "\033[31m%s\033[0m",
+            'green' => "\033[32m%s\033[0m",
+            'yellow' => "\033[33m%s\033[0m",
+            'blue' => "\033[34m%s\033[0m",
+            'magenta' => "\033[35m%s\033[0m",
+            'cyan' => "\033[36m%s\033[0m",
+            'white' => "\033[37m%s\033[0m",
+            // background colors
+            'background_black' => "\033[40m%s\033[0m",
+            'background_red' => "\033[41m%s\033[0m",
+            'background_green' => "\033[42m%s\033[0m",
+            'background_yellow' => "\033[43m%s\033[0m",
+            'background_blue' => "\033[44m%s\033[0m",
+            'background_magenta' => "\033[45m%s\033[0m",
+            'background_cyan' => "\033[46m%s\033[0m",
+            'background_white' => "\033[47m%s\033[0m",
+        );
+
+        if (!array_key_exists($color, $colors)) {
+
+            $color = 'red';
+
+            self::colorCode("Color provided to color code ($color) is invalid, message caught '$message'", 'red');
+
+        }
+
+        $colorCodex = sprintf($colors[$color], $message);
+
+        error_log($colorCodex);    // do not double quote args passed here
+
+        if ($exit) {
+
+            exit($message);
+
+        }
+
+    }
+
+};
+
+
+

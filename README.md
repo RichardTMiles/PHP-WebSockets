@@ -26,3 +26,7 @@ This will allow you to visit the chat demo on your local web browser
 http://localhost:7777/    
 
 ^ Throw a star up there!
+
+
+
+mkdir -p ./logs/httpd/ && rm /usr/local/var/www && ln -s $(pwd) /usr/local/var/www && brew services restart httpd
