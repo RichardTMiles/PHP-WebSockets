@@ -117,7 +117,7 @@
                 let json = isJson(ev.data);
 
                 if (json === false) {
-                    $('#message_box').append("<div class=\"system_msg\">NonJson: " + ev.data + "</div>");
+                    $('#message_box').append("<div class=\"system_msg\">onMessage: " + ev.data + "</div>");
                     return;
                 }
                 console.log(ev);

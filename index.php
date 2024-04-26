@@ -1,5 +1,9 @@
 <?php
 
+use CarbonPHP\Abstracts\ColorCode;
+use CarbonPHP\Interfaces\iColorCode;
+
+session_start();
 
 if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
     && str_contains($_SERVER['HTTP_UPGRADE'] ?? '', 'websocket'))) {
@@ -40,8 +44,6 @@ new class($argv ??= []) {
             // Here you can handle the WebSocket upgrade logic
             self::handleSingleUserConnections();
 
-            exit(0);
-
         }
 
         while (!empty($argv)) {
@@ -61,12 +63,16 @@ new class($argv ??= []) {
 
         if (self::$SSL) {
 
-            $context = stream_context_create(['ssl' => ['local_cert' => self::CERT,
-                'passphrase' => self::PASS,
-                'verify_peer' => false,
-                'verify_peer_name' => false,
-                'allow_self_signed' => true,
-                'verify_depth' => 0]]);
+            $context = stream_context_create([
+                'ssl' => [
+                    'local_cert' => self::CERT,
+                    'passphrase' => self::PASS,
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true,
+                    'verify_depth' => 0
+                ]
+            ]);
 
             $protocol = 'ssl';
 
@@ -165,7 +171,6 @@ new class($argv ??= []) {
             ob_end_clean();
         }
 
-
         ob_start(new class(self::class) {
 
             public static mixed $that;
@@ -199,40 +204,26 @@ new class($argv ??= []) {
 
         // these function calls are dynamic to whatever the current buffer is.
         return static function (): void {
-
             if (ob_get_level() === 0) {
                 self::outputBufferWebSocketEncoder();
                 return;
             }
-
             if (0 === ob_get_length()) {
                 return;
             }
-
             // this will also remove the buffer, but IS NEEDED.
             // ob_flush will not guarantee the buffer runs through the ob_start callback.
             if (!ob_get_flush()) {
-
                 throw new Error('Failed to flush the output buffer.');
-
             }
-
             // my first thought was to return this method call, but it is not needed.
             self::outputBufferWebSocketEncoder();
-
         };
 
     }
 
     public static function handleSingleUserConnections(): void
     {
-
-        if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
-            && str_contains($_SERVER['HTTP_UPGRADE'] ?? '', 'websocket'))) {
-
-            return;
-
-        }
 
         if (!defined('STDOUT')) {
 
@@ -252,13 +243,15 @@ new class($argv ??= []) {
         $flush();
 
         // Here you can handle the WebSocket upgrade logic
-        $websocket = apache_websocket_stream();
+        $websocket = apache_connection_stream();
 
         if (!is_resource($websocket)) {
 
             throw new Error('INPUT is not a valid resource');
 
         }
+
+        $myFifo = self::namedPipe();
 
         $loop = 0;
 
@@ -267,6 +260,12 @@ new class($argv ??= []) {
             try {
 
                 ++$loop;
+
+                print "Loop: $loop\n";
+
+                $flush();
+
+                sleep(1);
 
                 if (!is_resource($websocket)) {
 
@@ -282,7 +281,7 @@ new class($argv ??= []) {
 
                 if ($number === 0) {
 
-                    self::colorCode("No streams are requesting to be processed. (loop: $loop; )", 'cyan');
+                    self::colorCode("No streams are requesting to be processed. (loop: $loop )", 'cyan');
 
                     continue;
 
@@ -292,23 +291,59 @@ new class($argv ??= []) {
 
                 foreach ($read as $connection) {
 
-                    if ($connection === $websocket) {
+                    switch ($connection) {
+                        case $websocket:
+                            $data = self::decode($connection);
+                            switch ($data['opcode']) {
+                                default:
+                                case self::BINARY:
+                                case self::CLOSE:
+                                    exit(0);
 
-                        $data = self::decode($connection);
+                                case self::PING :
+                                    @fwrite($connection, self::encode('', self::PONG));
+                                    break;
 
-                        print_r($data);
+                                case self::TEXT:
+                                    $PrintPayload = print_r($data['payload'], true);
 
-                        $flush();
+                                    self::colorCode("The following was received ($PrintPayload)");
 
+                                    print $data['payload']['name'] . ', has sent :: ' . $data['payload']['message'] . PHP_EOL;
+
+                                    $flush();
+
+                                    if (!is_string($data)) {
+                                        $data = json_encode($data, JSON_THROW_ON_ERROR) . PHP_EOL;
+                                        print $data;
+                                        $flush();
+                                    }
+
+                                    self::sendToEveryone($data);
+
+                                    break;
+                            }
+
+
+                            break;
+                        case $myFifo:
+                            // Read from the FIFO until the buffer is empty
+                            //while (!feof($myFifo)) {
+                                $data = fread($myFifo, 4096); // Read up to 4096 bytes at a time
+                                echo $data;
+                           // }
+                            $flush();
+                            break;
+                        default:
+                            print('Unknown read connection!');
+                            exit(1);
                     }
 
                 }
 
-                sleep(1);
-
             } catch (Throwable $e) {
 
-                print_r($e);
+                self::colorCode(print_r($e, true), 'red');
 
             }
 
@@ -559,11 +594,8 @@ new class($argv ??= []) {
 
             $message .= $handle;
         }
-
         // arrays are faster than objects
-
         self::colorCode("About to Json Decode The Message :: ($message)", 'yellow');
-
         $out['payload'] = json_decode($message, true, 512, JSON_THROW_ON_ERROR);
         return $out;
     }
@@ -654,6 +686,213 @@ new class($argv ??= []) {
             exit($message);
 
         }
+
+    }
+
+    public const string FIFO_DELIMITER = "\nFIFO_DELIMITER\n";
+    public const string FIFO_DIRECTORY = __DIR__ . DIRECTORY_SEPARATOR . "tmp" . DIRECTORY_SEPARATOR;
+
+    public static function namedPipe()
+    {
+
+        try {
+
+            $fifoPath = self::FIFO_DIRECTORY . session_id() . '.fifo';
+
+            if (file_exists($fifoPath)) {
+
+                unlink($fifoPath);          // We are always the creator
+
+            }
+
+            umask(0000);
+
+            $directory = dirname($fifoPath);
+
+            if (!is_dir($directory) && !mkdir($directory) && !is_dir($directory)) {
+
+                self::colorCode("Failed to create directory ($directory)", 'red');
+
+                return false;
+            }
+
+            if (!posix_mkfifo($fifoPath, 0666)) {
+
+                self::colorCode("Failed to create named pipe ($fifoPath)", 'red');
+
+                return false;
+
+            }                   # create a named pipe 0644
+
+            // the websocket should be running under the same user the webserver is run under
+            #$user = get_current_user();     // get current process user
+            #exec("chown -R {$user} $fifoPath");
+
+            $fifoFile = fopen($fifoPath, 'rb+');      // Now we open the named pipe we Already created
+
+            if (false === $fifoFile) {
+
+                return false;
+
+            }
+
+            stream_set_blocking($fifoFile, false);    // setting to true (resource heavy) activates the handshake feature, aka timeout
+
+            self::colorCode("Named pipe created ($fifoPath).", 'blue');
+
+            return $fifoFile;                                       // File descriptor
+
+        } catch (Throwable $e) {
+
+            print_r($e);
+
+            exit(1);
+
+        }
+
+    }
+
+    public static function sendToEveryone(string $data): void
+    {
+        $updates = [];
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(self::FIFO_DIRECTORY));
+
+        foreach ($iterator as $file) {
+
+            if ($file->isFile() && pathinfo($file->getFilename(), PATHINFO_EXTENSION) === 'fifo') {
+
+                $fifoPath = $file->getPathname();
+
+                if ($file->getFilename() === session_id() . '.fifo') {
+
+                    print "Skipping our own fifo\n";
+
+                    // no need to update our own fifo with info we already have
+                    continue;
+
+                }
+
+                $updates[] = static function () use ($data, $fifoPath) {
+
+                    // Open the FIFO for writing
+                    $fifo = fopen($fifoPath, 'wb');
+
+                    if ($fifo === false) {
+                        die("Failed to open FIFO for writing");
+                    }
+
+                    // Try to acquire an exclusive lock for writing
+                    if (flock($fifo, LOCK_EX)) {
+                        // Write to the FIFO
+                        fwrite($fifo, $data . self::FIFO_DELIMITER);
+
+                        // Release the lock
+                        flock($fifo, LOCK_UN);
+                    } else {
+                        echo "Could not acquire lock on FIFO";
+                    }
+
+                    fclose($fifo);
+                };
+            }
+
+        }
+
+        print "Updates: " . count($updates) . PHP_EOL;
+
+        self::executeInChildProcesses($updates);
+    }
+
+    /**
+     * Execute multiple callables each in its own child process.
+     *
+     * @param array $tasks Array of callables to be executed in child processes.
+     */
+    public static function executeInChildProcesses(array $tasks, callable $returnHandler = null): void
+    {
+        $childPids = [];
+
+        foreach ($tasks as $task) {
+
+            $pid = self::safePcntlFork($task);
+
+            print "PID: $pid\n";
+
+            // zero indicates pcntl_fork is not available and the task was executed in the current process
+            if (0 !== $pid) {
+
+                $childPids[] = $pid;
+
+            }
+
+        }
+
+        // Parent waits for all child processes to finish
+        while (count($childPids) > 0) {
+
+            sleep(1);
+
+            $exitStatus = self::waitForAnyChildProcess($childPids);
+
+            if (null !== $exitStatus) {
+
+                self::colorCode("Child process ({$exitStatus['pid']}) exited with status ({$exitStatus['status']})");
+
+                $returnHandler($exitStatus['pid'], $exitStatus['status']);
+
+            }
+
+        }
+
+    }
+
+    /** This will safely execute a passed closure if the pncl library in not
+     * found in the environment. This should only be used when the callable
+     * function does not access or modify the database or session. Carbon uses
+     * this when realtime communication using named pipe is requested. It only
+     * speeds up execution, however it is not required and will never throw an
+     * error.
+     * @param callable $closure
+     * @return int
+     */
+    public static function safePcntlFork(callable $closure): int
+    {
+
+        if (!extension_loaded('pcntl')) {
+
+            self::colorCode('PCNTL extension not found. Executing in current process.', 'yellow');
+
+            $closure();
+
+            return 0;
+
+        }
+
+        if ($pid = pcntl_fork()) {    // return child id for parent and 0 for child
+
+            return $pid;             // Parent
+
+        }
+
+        if ($pid < 0) {
+
+            throw new RuntimeException('Failed to fork');
+
+        }
+
+        define('FORK', true);
+
+        // Database::resetConnection();
+        // fclose(STDIN); -- unset
+        register_shutdown_function(static function () {
+            session_abort();
+            posix_kill(posix_getpid(), SIGHUP);
+            exit(0);
+        });
+
+        $closure();
+
+        exit(0);
 
     }
 
