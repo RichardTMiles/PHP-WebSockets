@@ -7,26 +7,38 @@ This includes the ws:// and wss:// protocol
 Simplistic and to the point. I saved you the run around 
 of digging through other repos. This is strictly for the 
 order of operations in a procedural script. All Websocket PHP
-operations are in the server file. This code is not production 
-ready, as input is not validated for XSS attacks. 
+operations are in the index.php file. 
 
-To run the demo use the following commands in a shell prompt 
+# PHP-RFC - https://github.com/php/php-src/pull/14047
 
-## starts the websocket server on port 8080
->>   sudo php server.php  
+Historically a websocket request must be setup by running a PHP cli script as a server that accepts connections on a specific port. This repo was used initially develop and test `apache_connection_stream` which would allow websockets though Apache CGI without any server configuartion.
 
-Then in a new window navigate to the same folder and start the client server
+## PHP-CGI apache2handler
 
-## starts php's built in webserver 
->>   php -S localhost:8888 index.php
+Running the full apache version currectly requires you build the PHP interpreter from source, specifically the branch used for [this pull request](https://github.com/php/php-src/pull/14047). As of now PHP's internal server cli `php -S` does not support WebSockets. You will need to add this porject to your Apache web root.
 
-This will allow you to visit the chat demo on your local web browser
+## PHP-CLI
+Running the PHP WebSocket server is done using the following commands in two seperate shells.
+
+- `php index.php`
+- `php -S localhost:8888 index.php`
+
+This will allow you to visit the chat demo on your local web browser.
+
+### CLI Server caviates 
+To setup this process in an Apache WebServer you will need the `mod_proxy` and `mod_proxy_wstunnel` modules installed. You can then add the following directive to your `.htaccess` files. Note: htaccess overrides will need to be enabled.
+
+```
+    RewriteCond %{HTTP:Connection} Upgrade [NC]
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteRule ^/?(.*) ws://127.0.0.1:8888/$1  [P,L,E=noconntimeout:1,E=noabort:1]
+```
+
+This will cause apache to proxy all requests to the PHP WebSocket server. If SSL is handled through Apache then it will be handled in the proxy as well, meaning you will not need to configure certificates in you PHP WebSocketserver as HTTPD will translate WSS to WS in the background. 
 
 ## navigates to php's built in webserver
-http://localhost:7777/    
+`open http://localhost:8888/`   
 
 ^ Throw a star up there!
 
 
-
-mkdir -p ./logs/httpd/ && rm /usr/local/var/www && ln -s $(pwd) /usr/local/var/www && brew services restart httpd
