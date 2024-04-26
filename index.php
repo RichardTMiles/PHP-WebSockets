@@ -550,7 +550,7 @@ new class($argv ??= []) {
 
             self::colorCode('Empty WS Read', self::RED);
 
-            $socket = self::ensureConvertToSocket(self::$socket);
+            $socket = self::ensureConvertToSocket($resource);
 
             if (empty($socket)) {
 
