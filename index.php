@@ -166,7 +166,11 @@ new class($argv ??= []) {
         // my error handler is set to stop at 1, but here I believe clearing all is the only way.
         // Php may start with an output buffer enabled but we need to clear that to in oder to send real time data.
         while (ob_get_level() > 0) {
+
+            self::colorCode("Clearing Output Buffer Level: " . ob_get_level(), "red");
+
             ob_end_clean();
+
         }
 
         ob_start(new class(self::class) {
@@ -234,15 +238,24 @@ new class($argv ??= []) {
 
         self::handshake(STDOUT, $headers);
 
+        self::colorCode('Handshake complete, starting WebSocket server.');
+
+        if (false === fwrite(STDOUT, self::encode(posix_getpid() . PHP_EOL))) {
+
+            self::colorCode('Failed to write to STDOUT', 'red');
+
+            exit(0);
+
+        }
+
+        // Now we start the buffer and write to it using standard io (print, echo, print_r,..) and encode it as one block until we flush it.
         $flush = self::outputBufferWebSocketEncoder();
-
-        print posix_getpid() . PHP_EOL;
-
-        $flush();
 
         // Here you can handle the WebSocket upgrade logic
         /** @noinspection PhpUndefinedFunctionInspection  - Proposed RFC */
         $websocket = apache_connection_stream();
+
+        stream_set_blocking($websocket, false);
 
         if (!is_resource($websocket)) {
 
@@ -255,6 +268,8 @@ new class($argv ??= []) {
         $loop = 0;
 
         while (true) {
+
+            self::colorCode("Loop: $loop");
 
             try {
 
@@ -276,7 +291,8 @@ new class($argv ??= []) {
 
                 $read = [$websocket, $myFifo];
 
-                $number = stream_select($read, $write, $error, 10);
+                // 3 should be set to a reasonably high value for your application, lower is better for debugging
+                $number = stream_select($read, $write, $error, 3);
 
                 if ($number === 0) {
 
@@ -678,7 +694,9 @@ new class($argv ??= []) {
 
         $colorCodex = sprintf($colors[$color], $message);
 
-        error_log($colorCodex);    // do not double quote args passed here
+        $pid = posix_getpid();
+
+        error_log('[' . $pid . '] ' . $colorCodex);    // do not double quote args passed here
 
         if ($exit) {
 
@@ -776,15 +794,11 @@ new class($argv ??= []) {
                 return;
             }
 
-            fwrite($fifo, $data);
+            @fwrite($fifo, $data);
 
             fclose($fifo);
 
         }
-
-        print "Updates: " . count($updates) . PHP_EOL;
-
-        self::executeInChildProcesses($updates);
 
     }
 
