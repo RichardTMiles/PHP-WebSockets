@@ -1,6 +1,5 @@
 <?php
 
-
 session_start();
 
 if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
@@ -20,11 +19,14 @@ if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
  */
 new class($argv ??= []) {
 
+
+    public const int CONTINUE = 0x0;
     public const int TEXT = 0x1;
     public const int BINARY = 0x2;
     public const int CLOSE = 0x8;
     public const int PING = 0x9;
     public const int PONG = 0xa;
+
     public const string HOST = '0.0.0.0';
     public const int PORT = 8888;
     public static bool $SSL = false;
@@ -110,10 +112,10 @@ new class($argv ??= []) {
 
                         if (!self::handshake($new_user_connection)) {
                             if (!is_resource($new_user_connection)) {
-                                self::colorCode('Connection no longer active resource.', 'red');
+                                self::colorCode('Connection no longer active resource.', self::RED);
                             } else {
                                 if (!fclose($new_user_connection)) {
-                                    self::colorCode('Failed to close resource connection.', 'red');
+                                    self::colorCode('Failed to close resource connection.', self::RED);
                                 }
                             }
                         } else {
@@ -127,7 +129,6 @@ new class($argv ??= []) {
 
                     switch ($data['opcode']) {
                         default:
-                        case self::BINARY:
                         case self::CLOSE:
                             $key_to_del = array_search($connection, $master, false);
                             @fclose($connection);
@@ -137,10 +138,10 @@ new class($argv ??= []) {
                         case self::PING :
                             @fwrite($connection, self::encode('', self::PONG));
                             break;
-
+                        case self::BINARY:
                         case self::TEXT:
                             $PrintPayload = print_r($data['payload'], true);
-                            self::colorCode("The following was received ($PrintPayload)");
+                            self::colorCode("The following was received ($PrintPayload)", self::MAGENTA);
 
                             print $data['payload']['name'] . ', has sent :: ' . $data['payload']['message'] . PHP_EOL;
 
@@ -160,18 +161,23 @@ new class($argv ??= []) {
         }
     }
 
-    public static function outputBufferWebSocketEncoder(): callable
+    public static function clearAllOutputBuffers()
     {
         // @note - https://www.php.net/manual/en/function.ob-get-level.php comments
         // my error handler is set to stop at 1, but here I believe clearing all is the only way.
         // Php may start with an output buffer enabled but we need to clear that to in oder to send real time data.
         while (ob_get_level() > 0) {
 
-            self::colorCode("Clearing Output Buffer Level: " . ob_get_level(), "red");
+            self::colorCode("Clearing Output Buffer Level: " . ob_get_level(), self::BACKGROUND_YELLOW);
 
             ob_end_clean();
 
         }
+    }
+
+    public static function outputBufferWebSocketEncoder(): callable
+    {
+        self::clearAllOutputBuffers();
 
         ob_start(new class(self::class) {
 
@@ -188,10 +194,11 @@ new class($argv ??= []) {
                     PHP_OUTPUT_HANDLER_START => "PHP_OUTPUT_HANDLER_START ($flag)",
                     PHP_OUTPUT_HANDLER_CONT => "PHP_OUTPUT_HANDLER_CONT ($flag)",
                     PHP_OUTPUT_HANDLER_END => "PHP_OUTPUT_HANDLER_END ($flag)",
+                    9 => "ob_get_flush ($flag)",
                     default => "Flag is not a constant ($flag)",
                 };
 
-                self::$that::colorCode("(" . __METHOD__ . ") Output Handler: $flag_sent");
+                self::$that::colorCode("Output Handler Flag: $flag_sent");
 
                 return self::$that::encode($part . PHP_EOL);
             }
@@ -236,20 +243,16 @@ new class($argv ??= []) {
         // get all headers has a polyfill in our function.php
         $headers = getallheaders();
 
+        // Now we start the buffer and write to it using standard io (print, echo, print_r,..) and encode it as one block until we flush it.
+        $flush = self::outputBufferWebSocketEncoder();
+
         self::handshake(STDOUT, $headers);
 
         self::colorCode('Handshake complete, starting WebSocket server.');
 
-        if (false === fwrite(STDOUT, self::encode(posix_getpid() . PHP_EOL))) {
+        print posix_getpid() . PHP_EOL;
 
-            self::colorCode('Failed to write to STDOUT', 'red');
-
-            exit(0);
-
-        }
-
-        // Now we start the buffer and write to it using standard io (print, echo, print_r,..) and encode it as one block until we flush it.
-        $flush = self::outputBufferWebSocketEncoder();
+        $flush();
 
         // Here you can handle the WebSocket upgrade logic
         /** @noinspection PhpUndefinedFunctionInspection  - Proposed RFC */
@@ -296,7 +299,7 @@ new class($argv ??= []) {
 
                 if ($number === 0) {
 
-                    self::colorCode("No streams are requesting to be processed. (loop: $loop )", 'cyan');
+                    self::colorCode("No streams are requesting to be processed. (loop: $loop )", self::CYAN);
 
                     continue;
 
@@ -358,7 +361,7 @@ new class($argv ??= []) {
 
             } catch (Throwable $e) {
 
-                self::colorCode(print_r($e, true), 'red');
+                self::colorCode(print_r($e, true), self::BACKGROUND_RED);
 
             }
 
@@ -500,48 +503,119 @@ new class($argv ??= []) {
 
     }
 
-    public static function decode($socket): array
+    public static function decode($resource): array
     {
-        if (!$socket || !is_resource($socket)) {
+
+        if (!$resource || !is_resource($resource)) {
+
             return [
+                'error' => 'Resource gone away',
                 'opcode' => self::CLOSE,
-                'error' => 'Socket filed pointer failed resource check. Closed.',
                 'payload' => ''
             ];
+
         }
 
         $out = [];
 
-        $read = fread($socket, 1);
+        if (get_resource_type($resource) === 'stream') {
 
-        if (empty($read)) {
+            //$read = fread($socketResource, 1);
+            // should things be unexpectedly sending with a length of 0 @link https://stackoverflow.com/questions/64855794/proxy-timeout-with-rewriterule
+            // @link https://stackoverflow.com/questions/41115870/is-binary-opcode-encoding-and-decoding-implementation-specific-in-websockets
+            $read = stream_get_contents($resource, 1);
+
+        } else {
+
+            $read = fread($resource, 1);
+
+        }
+
+        if (false === $read) {
+
+            $socket = self::ensureConvertToSocket(self::$socket);
+
             return [
+                'socketStatus' => stream_get_meta_data($resource),
+                'error' => 'socket read failure',
+                'socket_last_error' => $code = socket_last_error($socket),
+                'socket_strerror' => socket_strerror($code),
                 'opcode' => self::CLOSE,
-                'emptyString' => true,
                 'payload' => ''
             ];
+
         }
 
-        self::colorCode("\n\n\n$read\n\n\n", 'blue');
+        if (empty($read)) {
+
+            self::colorCode('Empty WS Read', self::RED);
+
+            $socket = self::ensureConvertToSocket(self::$socket);
+
+            if (empty($socket)) {
+
+                return [
+                    'error' => 'Empty socket read, if your proxying this could be a timeout. @link https://stackoverflow.com/questions/64855794/proxy-timeout-with-rewriterule',
+                    'opcode' => self::PING,
+                    'payload' => ''
+                ];
+            }
+
+            return [
+                'stream_get_meta_data' => stream_get_meta_data($resource),
+                'error' => 'empty socket read, if your proxying this could be a timeout. @link https://stackoverflow.com/questions/64855794/proxy-timeout-with-rewriterule',
+                'socket_last_error' => $code = socket_last_error($socket),
+                'socket_strerror' => socket_strerror($code),
+                'opcode' => self::PING,
+                'payload' => ''
+            ];
+
+        }
 
         $handle = ord($read);
-        $out['fin'] = ($handle >> 7) & 0x1;
-        $out['rsv1'] = ($handle >> 6) & 0x1;
-        $out['rsv2'] = ($handle >> 5) & 0x1;
-        $out['rsv3'] = ($handle >> 4) & 0x1;
-        $out['opcode'] = $handle & 0xf;
 
-        if (!\in_array($out['opcode'], [self::TEXT, self::BINARY, self::CLOSE, self::PING, self::PONG], true)) {
-            return [
-                'opcode' => '',
-                'payload' => '',
-                'error' => 'unknown opcode (1003)'
-            ];
+        //Get the first byte and & it with 127, the result is your FIN bit
+        $out['fin'] = ($handle >> 7) & 0x1; // get the 7th bit in the first byte
+
+        $out['rsv1'] = ($handle >> 6) & 0x1; // get the 6th bit in the first byte
+
+        $out['rsv2'] = ($handle >> 5) & 0x1;
+
+        $out['rsv3'] = ($handle >> 4) & 0x1;
+
+        // Get the first byte and & it with 15, the result is your opcode
+        $out['opcode'] = $handle & 0xf; // get the last 4 bits in the first byte
+
+        if (self::CLOSE === $out['opcode']) {
+
+            $out['dataframe'] = $handle & 0xff;
+
         }
 
-        $handle = ord(fread($socket, 1));
+        if (!in_array($out['opcode'], [
+            self::CONTINUE,
+            self::TEXT,
+            self::BINARY,
+            self::CLOSE,
+            self::PING,
+            self::PONG
+        ], true)) {
+            return $out + [
+                    'error' => 'unknown opcode (1003)'
+                ];
+        }
+
+        $handle = ord(fread($resource, 1));
+
+        // Most significant bit of the 2nd byte, tells you if the payload has been masked. A Server must not mask any frame!
+        // Get the second byte and & it with 127, if it is 127 you have a masking key
         $out['mask'] = ($handle >> 7) & 0x1;
+
+        // Payload Length (This is where things can get complicated)
+        // Take the 2nd byte and read every bit except the Most significant bit
         $out['length'] = $handle & 0x7f;
+
+        // Byte is 125 or fewer that's your length
         $length = &$out['length'];
 
         if ($out['rsv1'] !== 0x0 || $out['rsv2'] !== 0x0 || $out['rsv3'] !== 0x0) {
@@ -552,67 +626,132 @@ new class($argv ??= []) {
             ];
         }
 
-        if ($length === 0) {
-            $out['payload'] = '';
-            return $out;
-        }
-
+        // Byte is 126
+        // Your length is an uint16 of byte 3 and 4
         if ($length === 0x7e) {
-            $handle = unpack('nl', fread($socket, 2));
+
+            $handle = unpack('nl', fread($resource, 2));
+
             $length = $handle['l'];
+
         } elseif ($length === 0x7f) {
-            $handle = unpack('N*l', fread($socket, 8));
+            // Byte is 127
+            // Your length is a uint64 of byte 3 to 8
+
+            $handle = unpack('N*l', fread($resource, 8));
+
             $length = $handle['l2'] ?? $length;
 
             if ($length > 0x7fffffffffffffff) {
-                return [
-                    'opcode' => $out['opcode'],
-                    'payload' => '',
-                    'error' => 'content length mismatch'
-                ];
+
+                self::colorCode('WS Length > 0x7fffffffffffffff', self::BACKGROUND_RED);
+
+                return $out + [
+                        'payload' => '',
+                        'error' => 'content length mismatch'
+                    ];
+
             }
+
         }
 
-        if ($out['mask'] === 0x0) {
+        // Masking key
+        // Only exists if the MASK bit is set
+        if ($out['mask'] === 0x0) { // (no mask set)
+
+            // Payload can be decoded either as Text (UTF-8) or Binary (Can be any data)
+            // The payload needs to be masked if the MASK bit is set
+
             $msg = '';
+
             $readLength = 0;
 
+            // This is not the whole payload if the FIN bit is set
             while ($readLength < $length) {
+
                 $toRead = $length - $readLength;
-                $msg .= fread($socket, $toRead);
+
+                $msg .= fread($resource, $toRead);
 
                 if ($readLength === strlen($msg)) {
+
                     break;
+
                 }
 
                 $readLength = strlen($msg);
+
             }
 
             $out['payload'] = $msg;
+
+            self::colorCode(print_r($out, true), self::CYAN);
+
             return $out;
+
         }
 
-        $maskN = array_map('ord', str_split(fread($socket, 4)));
+
+        // Payload
+        // The next 4 bytes is the masking key, this key is used to decode the payload
+
+        $maskN = array_map('ord', str_split(fread($resource, 4)));
+
         $maskC = 0;
 
         $bufferLength = 1024;
+
         $message = '';
 
+        // This is not the whole payload if the FIN bit is set
         for ($i = 0; $i < $length; $i += $bufferLength) {
+
             $buffer = min($bufferLength, $length - $i);
-            $handle = fread($socket, $buffer);
+
+            $handle = fread($resource, $buffer);
 
             for ($j = 0, $_length = strlen($handle); $j < $_length; ++$j) {
+
                 $handle[$j] = chr(ord($handle[$j]) ^ $maskN[$maskC]);
+
                 $maskC = ($maskC + 1) % 4;
+
             }
 
             $message .= $handle;
+
         }
-        // arrays are faster than objects
-        self::colorCode("About to Json Decode The Message :: ($message)", 'yellow');
-        $out['payload'] = json_decode($message, true, 512, JSON_THROW_ON_ERROR);
+
+        $isJson = json_decode($message, true);
+
+        $out['payload'] = $isJson ?: $message;
+
+        self::colorCode(print_r($out, true), self::BACKGROUND_GREEN);
+
         return $out;
+
+    }
+
+    public static function ensureConvertToSocket($connection)
+    {
+        if (get_resource_type($connection) === 'stream') {
+
+            if ((defined('STDIN') && $connection === STDIN)
+                || (defined('STDOUT') && $connection === STDOUT)
+                || (defined('STDERR') && $connection === STDERR)
+                || (defined('INPUT') && $connection === INPUT)
+            ) {
+
+                return false;
+
+            }
+
+            return socket_import_stream($connection);
+
+        }
+
+        return $connection;
+
     }
 
     public static function buildCertificate(): void
@@ -644,68 +783,6 @@ new class($argv ??= []) {
     }
 
 
-    /**
-     * @param string $message
-     * @param string $color
-     * @param bool $exit
-     * @param int $priority
-     * @link https://www.php.net/manual/en/function.syslog.php
-     */
-    public static function colorCode(string $message, string $color = 'green', bool $exit = false): void
-    {
-
-        $colors = array(
-            // styles
-            // italic and blink may not work depending of your terminal
-            'bold' => "\033[1m%s\033[0m",
-            'dark' => "\033[2m%s\033[0m",
-            'italic' => "\033[3m%s\033[0m",
-            'underline' => "\033[4m%s\033[0m",
-            'blink' => "\033[5m%s\033[0m",
-            'reverse' => "\033[7m%s\033[0m",
-            'concealed' => "\033[8m%s\033[0m",
-            // foreground colors
-            'black' => "\033[30m%s\033[0m",
-            'red' => "\033[31m%s\033[0m",
-            'green' => "\033[32m%s\033[0m",
-            'yellow' => "\033[33m%s\033[0m",
-            'blue' => "\033[34m%s\033[0m",
-            'magenta' => "\033[35m%s\033[0m",
-            'cyan' => "\033[36m%s\033[0m",
-            'white' => "\033[37m%s\033[0m",
-            // background colors
-            'background_black' => "\033[40m%s\033[0m",
-            'background_red' => "\033[41m%s\033[0m",
-            'background_green' => "\033[42m%s\033[0m",
-            'background_yellow' => "\033[43m%s\033[0m",
-            'background_blue' => "\033[44m%s\033[0m",
-            'background_magenta' => "\033[45m%s\033[0m",
-            'background_cyan' => "\033[46m%s\033[0m",
-            'background_white' => "\033[47m%s\033[0m",
-        );
-
-        if (!array_key_exists($color, $colors)) {
-
-            $color = 'red';
-
-            self::colorCode("Color provided to color code ($color) is invalid, message caught '$message'", 'red');
-
-        }
-
-        $colorCodex = sprintf($colors[$color], $message);
-
-        $pid = posix_getpid();
-
-        error_log('[' . $pid . '] ' . $colorCodex);    // do not double quote args passed here
-
-        if ($exit) {
-
-            exit($message);
-
-        }
-
-    }
-
     public const string FIFO_DIRECTORY = __DIR__ . DIRECTORY_SEPARATOR . "tmp" . DIRECTORY_SEPARATOR;
 
     public static function namedPipe()
@@ -727,14 +804,14 @@ new class($argv ??= []) {
 
             if (!is_dir($directory) && !mkdir($directory) && !is_dir($directory)) {
 
-                self::colorCode("Failed to create directory ($directory)", 'red');
+                self::colorCode("Failed to create directory ($directory)", self::RED);
 
                 return false;
             }
 
             if (!posix_mkfifo($fifoPath, 0666)) {
 
-                self::colorCode("Failed to create named pipe ($fifoPath)", 'red');
+                self::colorCode("Failed to create named pipe ($fifoPath)", self::RED);
 
                 return false;
 
@@ -756,12 +833,13 @@ new class($argv ??= []) {
 
             stream_set_blocking($fifoFile, false);    // setting to true (resource heavy) activates the handshake feature, aka timeout
 
-            self::colorCode("Named pipe created ($fifoPath).", 'blue');
+            self::colorCode("Named pipe created ($fifoPath).", self::BLUE);
 
             return $fifoFile;                                       // File descriptor
 
         } catch (Throwable $e) {
 
+            /** @noinspection ForgottenDebugOutputInspection - todo - error handler */
             print_r($e);
 
             exit(1);
@@ -772,7 +850,6 @@ new class($argv ??= []) {
 
     public static function sendToEveryone(string $data): void
     {
-        $updates = [];
 
         $fifoFiles = glob(self::FIFO_DIRECTORY . '*.fifo');
 
@@ -796,9 +873,111 @@ new class($argv ??= []) {
 
             @fwrite($fifo, $data);
 
-            fclose($fifo);
+            @fclose($fifo);
 
         }
+
+    }
+
+    public const BOLD = 'bold';
+    public const DARK = 'dark';
+    public const ITALIC = 'italic';
+    public const UNDERLINE = 'underline';
+    public const BLINK = 'blink';
+    public const REVERSE = 'reverse';
+    public const CONCEALED = 'concealed';
+    public const BLACK = 'black';
+    public const RED = 'red';
+    public const GREEN = 'green';
+    public const YELLOW = 'yellow';
+    public const BLUE = 'blue';
+    public const MAGENTA = 'magenta';
+    public const CYAN = 'cyan';
+    public const WHITE = 'white';
+    public const BACKGROUND_BLACK = 'background_black';
+    public const BACKGROUND_RED = 'background_red';
+    public const BACKGROUND_GREEN = 'background_green';
+    public const BACKGROUND_YELLOW = 'background_yellow';
+    public const BACKGROUND_BLUE = 'background_blue';
+    public const BACKGROUND_MAGENTA = 'background_magenta';
+    public const BACKGROUND_CYAN = 'background_cyan';
+    public const BACKGROUND_WHITE = 'background_white';
+
+
+    public const PRINTF_ANSI_COLOR = [
+        // styles
+        // italic and blink may not work depending of your terminal
+        self::BOLD => "\033[1m%s\033[0m",
+        self::DARK => "\033[2m%s\033[0m",
+        self::ITALIC => "\033[3m%s\033[0m",
+        self::UNDERLINE => "\033[4m%s\033[0m",
+        self::BLINK => "\033[5m%s\033[0m",
+        self::REVERSE => "\033[7m%s\033[0m",
+        self::CONCEALED => "\033[8m%s\033[0m",
+        // foreground colors
+        self::BLACK => "\033[30m%s\033[0m",
+        self::RED => "\033[31m%s\033[0m",
+        self::GREEN => "\033[32m%s\033[0m",
+        self::YELLOW => "\033[33m%s\033[0m",
+        self::BLUE => "\033[34m%s\033[0m",
+        self::MAGENTA => "\033[35m%s\033[0m",
+        self::CYAN => "\033[36m%s\033[0m",
+        self::WHITE => "\033[37m%s\033[0m",
+        // background colors
+        self::BACKGROUND_BLACK => "\033[40m%s\033[0m",
+        self::BACKGROUND_RED => "\033[41m%s\033[0m",
+        self::BACKGROUND_GREEN => "\033[42m%s\033[0m",
+        self::BACKGROUND_YELLOW => "\033[43m%s\033[0m",
+        self::BACKGROUND_BLUE => "\033[44m%s\033[0m",
+        self::BACKGROUND_MAGENTA => "\033[45m%s\033[0m",
+        self::BACKGROUND_CYAN => "\033[46m%s\033[0m",
+        self::BACKGROUND_WHITE => "\033[47m%s\033[0m",
+    ];
+
+
+    /**
+     * @param string $message
+     * @param string $color
+     * @param bool $exit
+     * @link https://www.php.net/manual/en/function.syslog.php
+     * @noinspection ForgottenDebugOutputInspection
+     */
+    public static function colorCode(string $message, string $color = self::GREEN): void
+    {
+
+        static $pidColorCache = [];
+
+        $colors = self::PRINTF_ANSI_COLOR;
+
+        $pid = getmypid(); // this shouldn't be cached
+
+        if (false === $pid) {
+
+            $logLinePrefix = 'The php internal function getmypid() has failed' . PHP_EOL . $message;
+
+        } else {
+
+            $pidColorCache[$pid] ??= array_values($colors)[($pid % (count($colors) - 8)) + 8];
+
+            [$seconds, $nanoseconds] = hrtime();
+
+            $milliseconds = $nanoseconds / 1e+6;
+
+            $logLinePrefix = sprintf($pidColorCache[$pid], "<pid($pid);hrtime(s:$seconds,m:$milliseconds)>") . ' ';
+
+        }
+
+        if (is_string($color) && !array_key_exists($color, $colors)) {
+
+            $message = "Color provided to color code ($color) is invalid, message caught '$message'";
+
+            $color = self::RED;
+
+        }
+
+        $message = $logLinePrefix . sprintf($colors[$color], $message);
+
+        error_log($message);
 
     }
 
