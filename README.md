@@ -1,32 +1,41 @@
 # PHP-Websockets (Live Chat & Communication)
 
-<img width="537" alt="screen shot 2018-01-25 at 4 48 32 am" src="https://user-images.githubusercontent.com/9538357/35384590-67a59d8e-018b-11e8-9d00-30948e91fc13.png">
+<img width="1792" alt="Screenshot 2024-04-26 at 12 56 27 AM" src="https://github.com/RichardTMiles/PHP-Websockets/assets/9538357/587aac7e-e345-4d6c-a289-8bd622eb8945">
 
 HTML 5 Websockets written for PHP
-This includes the ws:// and wss:// protocol 
-Simplistic and to the point. I saved you the run around 
-of digging through other repos. This is strictly for the 
-order of operations in a procedural script. All Websocket PHP
-operations are in the server file. This code is not production 
-ready, as input is not validated for XSS attacks. 
+This includes the ws:// and wss:// protocol. Simplistic and to the point. I saved you the run around of digging through other repos or learning spec. This is strictly for the order of operations in a procedural script. Complexities are guaranteed to exist for any specific use case.
 
-To run the demo use the following commands in a shell prompt 
+# PHP-RFC - https://github.com/php/php-src/pull/14047
 
-## starts the websocket server on port 8080
->>   sudo php server.php  
+This repo was used to initially develop and test `apache_connection_stream` which would allow websockets though Apache CGI without any server configuartion. Historically a websocket request must be setup by running a PHP-CLI script that starts a server to then accepts connections on a specific port. 
 
-Then in a new window navigate to the same folder and start the client server
+# Starting the WebSocket
+## PHP-CGI apache2handler
 
-## starts php's built in webserver 
->>   php -S localhost:8888 index.php
+Running the full apache version currectly requires you build the PHP interpreter from source, specifically the branch used for [this pull request](https://github.com/php/php-src/pull/14047). I have a [2024 Gist for Mac Users](https://gist.github.com/RichardTMiles/ebf6ce2758bf3f11469d25463092465a). Note: many tutorials exist. If the proposal becomes standard compilation will no longer be nessasary. As of now PHP's internal server cli `php -S` does not support WebSockets. You will need to add this project to your Apache web root. It is assumed that Apache is set to serve `index.php` as the default request, which would be the assumed behavior on an Apache PHP enabled server. Both requests (HTTP GET, and HTTP Upgrate WebSocket) will have the appropriate headers returned. The Upgrade request will persist as expected while the GET request will terminate after the HTML data is served.
 
-This will allow you to visit the chat demo on your local web browser
+## PHP-CLI
+Running the PHP WebSocket server is done using the following commands in two seperate shells.
+
+- `php index.php`
+- `php -S localhost:8888 index.php`
+
+This will allow you to visit the chat demo on your local web browser.
+
+### CLI Server caviates 
+To setup this process in an Apache WebServer you will need the `mod_proxy` and `mod_proxy_wstunnel` modules installed. You can then add the following directive to your `.htaccess` files. Note: htaccess overrides will need to be enabled.
+
+```
+    RewriteCond %{HTTP:Connection} Upgrade [NC]
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteRule ^/?(.*) ws://127.0.0.1:8888/$1  [P,L,E=noconntimeout:1,E=noabort:1]
+```
+
+This will cause apache to proxy all requests to the PHP WebSocket server. If SSL is handled through Apache then it will be handled in the proxy as well, meaning you will not need to configure certificates in you PHP WebSocketserver as HTTPD will translate WSS to WS in the background. 
 
 ## navigates to php's built in webserver
-http://localhost:7777/    
+`open http://localhost:8888/`   
 
 ^ Throw a star up there!
 
 
-
-mkdir -p ./logs/httpd/ && rm /usr/local/var/www && ln -s $(pwd) /usr/local/var/www && brew services restart httpd
