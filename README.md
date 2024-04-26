@@ -3,15 +3,11 @@
 <img width="1792" alt="Screenshot 2024-04-26 at 12 56 27 AM" src="https://github.com/RichardTMiles/PHP-Websockets/assets/9538357/587aac7e-e345-4d6c-a289-8bd622eb8945">
 
 HTML 5 Websockets written for PHP
-This includes the ws:// and wss:// protocol 
-Simplistic and to the point. I saved you the run around 
-of digging through other repos. This is strictly for the 
-order of operations in a procedural script. All Websocket PHP
-operations are in the index.php file. 
+This includes the ws:// and wss:// protocol. Simplistic and to the point. I saved you the run around of digging through other repos or learning spec. This is strictly for the order of operations in a procedural script. Complexities are guaranteed to exist for any specific use case.
 
 # PHP-RFC - https://github.com/php/php-src/pull/14047
 
-Historically a websocket request must be setup by running a PHP cli script as a server that accepts connections on a specific port. This repo was used initially develop and test `apache_connection_stream` which would allow websockets though Apache CGI without any server configuartion.
+Historically a websocket request must be setup by running a PHP cli script as a server that accepts connections on a specific port. This repo was used to initially develop and test `apache_connection_stream` which would allow websockets though Apache CGI without any server configuartion.
 
 ## PHP-CGI apache2handler
 
