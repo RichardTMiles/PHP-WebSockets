@@ -1,7 +1,5 @@
 <?php
 
-use CarbonPHP\Abstracts\ColorCode;
-use CarbonPHP\Interfaces\iColorCode;
 
 session_start();
 
@@ -22,16 +20,16 @@ if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
  */
 new class($argv ??= []) {
 
-    public const TEXT = 0x1;
-    public const BINARY = 0x2;
-    public const CLOSE = 0x8;
-    public const PING = 0x9;
-    public const PONG = 0xa;
-    public const HOST = '0.0.0.0';
-    public const PORT = 8888;
+    public const int TEXT = 0x1;
+    public const int BINARY = 0x2;
+    public const int CLOSE = 0x8;
+    public const int PING = 0x9;
+    public const int PONG = 0xa;
+    public const string HOST = '0.0.0.0';
+    public const int PORT = 8888;
     public static bool $SSL = false;
-    public const CERT = '/cert.pem';
-    public const PASS = 'Smokey';
+    public const string CERT = '/cert.pem';
+    public const string PASS = 'Smokey';
 
 
     public function __construct(array $argv)
@@ -243,6 +241,7 @@ new class($argv ??= []) {
         $flush();
 
         // Here you can handle the WebSocket upgrade logic
+        /** @noinspection PhpUndefinedFunctionInspection  - Proposed RFC */
         $websocket = apache_connection_stream();
 
         if (!is_resource($websocket)) {
@@ -275,7 +274,7 @@ new class($argv ??= []) {
 
                 $flush();
 
-                $read = [$websocket];
+                $read = [$websocket, $myFifo];
 
                 $number = stream_select($read, $write, $error, 10);
 
@@ -321,6 +320,8 @@ new class($argv ??= []) {
 
                                     self::sendToEveryone($data);
 
+                                    $flush();
+
                                     break;
                             }
 
@@ -329,9 +330,9 @@ new class($argv ??= []) {
                         case $myFifo:
                             // Read from the FIFO until the buffer is empty
                             //while (!feof($myFifo)) {
-                                $data = fread($myFifo, 4096); // Read up to 4096 bytes at a time
-                                echo $data;
-                           // }
+                            $data = fread($myFifo, 4096); // Read up to 4096 bytes at a time
+                            echo $data;
+                            // }
                             $flush();
                             break;
                         default:
@@ -728,11 +729,12 @@ new class($argv ??= []) {
             #$user = get_current_user();     // get current process user
             #exec("chown -R {$user} $fifoPath");
 
+            // this has to have the +
             $fifoFile = fopen($fifoPath, 'rb+');      // Now we open the named pipe we Already created
 
             if (false === $fifoFile) {
 
-                return false;
+                throw new Error('Failed to open FIFO for reading and writing');
 
             }
 
@@ -755,52 +757,46 @@ new class($argv ??= []) {
     public static function sendToEveryone(string $data): void
     {
         $updates = [];
-        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(self::FIFO_DIRECTORY));
+        $fifoFiles = glob(self::FIFO_DIRECTORY . '*.fifo');
 
-        foreach ($iterator as $file) {
+        foreach ($fifoFiles as $fifoPath) {
+            // Process each .fifo file
 
-            if ($file->isFile() && pathinfo($file->getFilename(), PATHINFO_EXTENSION) === 'fifo') {
+            print "Fifo Path: $fifoPath\n";
 
-                $fifoPath = $file->getPathname();
 
-                if ($file->getFilename() === session_id() . '.fifo') {
+            if (str_ends_with($fifoPath, session_id() . '.fifo')) {
 
-                    print "Skipping our own fifo\n";
+                print "Skipping our own fifo\n";
 
-                    // no need to update our own fifo with info we already have
-                    continue;
+                // no need to update our own fifo with info we already have
+                continue;
 
-                }
-
-                $updates[] = static function () use ($data, $fifoPath) {
-
-                    // Open the FIFO for writing
-                    $fifo = fopen($fifoPath, 'wb');
-
-                    if ($fifo === false) {
-                        die("Failed to open FIFO for writing");
-                    }
-
-                    // Try to acquire an exclusive lock for writing
-                    if (flock($fifo, LOCK_EX)) {
-                        // Write to the FIFO
-                        fwrite($fifo, $data . self::FIFO_DELIMITER);
-
-                        // Release the lock
-                        flock($fifo, LOCK_UN);
-                    } else {
-                        echo "Could not acquire lock on FIFO";
-                    }
-
-                    fclose($fifo);
-                };
             }
+
+            print "Sending to FIFO: $fifoPath\n";
+
+            //$updates[] = static function () use ($data, $fifoPath) {
+
+            // Open the FIFO for writing
+            $fifo = fopen($fifoPath, 'wb');
+
+            if ($fifo === false) {
+                print ("Failed to open FIFO for writing");
+                continue;
+            }
+
+            fwrite($fifo, $data . self::FIFO_DELIMITER);
+
+            fclose($fifo);
+            //  };
 
         }
 
         print "Updates: " . count($updates) . PHP_EOL;
 
-        self::executeInChildProcesses($updates);
+//self::executeInChildProcesses($updates);
+
     }
 
     /**
@@ -808,7 +804,7 @@ new class($argv ??= []) {
      *
      * @param array $tasks Array of callables to be executed in child processes.
      */
-    public static function executeInChildProcesses(array $tasks, callable $returnHandler = null): void
+    public static function executeInChildProcesses(array $tasks, callable|null $returnHandler = null): void
     {
         $childPids = [];
 
@@ -858,7 +854,7 @@ new class($argv ??= []) {
     public static function safePcntlFork(callable $closure): int
     {
 
-        if (!extension_loaded('pcntl')) {
+        if (extension_loaded('pcntl')) {
 
             self::colorCode('PCNTL extension not found. Executing in current process.', 'yellow');
 
