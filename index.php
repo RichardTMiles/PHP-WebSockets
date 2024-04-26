@@ -6,7 +6,7 @@ session_start();
 if (!(str_contains($_SERVER['HTTP_CONNECTION'] ?? '', 'Upgrade')
     && str_contains($_SERVER['HTTP_UPGRADE'] ?? '', 'websocket'))) {
 
-    include 'index.html';
+    include 'console.html';
 
     exit(0);
 
@@ -329,10 +329,8 @@ new class($argv ??= []) {
                             break;
                         case $myFifo:
                             // Read from the FIFO until the buffer is empty
-                            //while (!feof($myFifo)) {
                             $data = fread($myFifo, 4096); // Read up to 4096 bytes at a time
                             echo $data;
-                            // }
                             $flush();
                             break;
                         default:
@@ -637,7 +635,7 @@ new class($argv ??= []) {
      * @param int $priority
      * @link https://www.php.net/manual/en/function.syslog.php
      */
-    public static function colorCode(string $message, string $color = 'green', bool $exit = false, int $priority = LOG_INFO): void
+    public static function colorCode(string $message, string $color = 'green', bool $exit = false): void
     {
 
         $colors = array(
@@ -690,7 +688,6 @@ new class($argv ??= []) {
 
     }
 
-    public const string FIFO_DELIMITER = "\nFIFO_DELIMITER\n";
     public const string FIFO_DIRECTORY = __DIR__ . DIRECTORY_SEPARATOR . "tmp" . DIRECTORY_SEPARATOR;
 
     public static function namedPipe()
@@ -723,14 +720,15 @@ new class($argv ??= []) {
 
                 return false;
 
-            }                   # create a named pipe 0644
-
-            // the websocket should be running under the same user the webserver is run under
-            #$user = get_current_user();     // get current process user
-            #exec("chown -R {$user} $fifoPath");
+            }
 
             // this has to have the +
-            $fifoFile = fopen($fifoPath, 'rb+');      // Now we open the named pipe we Already created
+            $fifoFile = fopen($fifoPath, 'rb+');
+
+            register_shutdown_function(static function () use ($fifoPath, $fifoFile) {
+                fclose($fifoFile);
+                unlink($fifoPath);
+            });
 
             if (false === $fifoFile) {
 
@@ -757,138 +755,36 @@ new class($argv ??= []) {
     public static function sendToEveryone(string $data): void
     {
         $updates = [];
+
         $fifoFiles = glob(self::FIFO_DIRECTORY . '*.fifo');
 
         foreach ($fifoFiles as $fifoPath) {
             // Process each .fifo file
 
-            print "Fifo Path: $fifoPath\n";
-
-
             if (str_ends_with($fifoPath, session_id() . '.fifo')) {
-
-                print "Skipping our own fifo\n";
 
                 // no need to update our own fifo with info we already have
                 continue;
 
             }
 
-            print "Sending to FIFO: $fifoPath\n";
-
-            //$updates[] = static function () use ($data, $fifoPath) {
-
             // Open the FIFO for writing
             $fifo = fopen($fifoPath, 'wb');
 
             if ($fifo === false) {
                 print ("Failed to open FIFO for writing");
-                continue;
+                return;
             }
 
-            fwrite($fifo, $data . self::FIFO_DELIMITER);
+            fwrite($fifo, $data);
 
             fclose($fifo);
-            //  };
 
         }
 
         print "Updates: " . count($updates) . PHP_EOL;
 
-//self::executeInChildProcesses($updates);
-
-    }
-
-    /**
-     * Execute multiple callables each in its own child process.
-     *
-     * @param array $tasks Array of callables to be executed in child processes.
-     */
-    public static function executeInChildProcesses(array $tasks, callable|null $returnHandler = null): void
-    {
-        $childPids = [];
-
-        foreach ($tasks as $task) {
-
-            $pid = self::safePcntlFork($task);
-
-            print "PID: $pid\n";
-
-            // zero indicates pcntl_fork is not available and the task was executed in the current process
-            if (0 !== $pid) {
-
-                $childPids[] = $pid;
-
-            }
-
-        }
-
-        // Parent waits for all child processes to finish
-        while (count($childPids) > 0) {
-
-            sleep(1);
-
-            $exitStatus = self::waitForAnyChildProcess($childPids);
-
-            if (null !== $exitStatus) {
-
-                self::colorCode("Child process ({$exitStatus['pid']}) exited with status ({$exitStatus['status']})");
-
-                $returnHandler($exitStatus['pid'], $exitStatus['status']);
-
-            }
-
-        }
-
-    }
-
-    /** This will safely execute a passed closure if the pncl library in not
-     * found in the environment. This should only be used when the callable
-     * function does not access or modify the database or session. Carbon uses
-     * this when realtime communication using named pipe is requested. It only
-     * speeds up execution, however it is not required and will never throw an
-     * error.
-     * @param callable $closure
-     * @return int
-     */
-    public static function safePcntlFork(callable $closure): int
-    {
-
-        if (extension_loaded('pcntl')) {
-
-            self::colorCode('PCNTL extension not found. Executing in current process.', 'yellow');
-
-            $closure();
-
-            return 0;
-
-        }
-
-        if ($pid = pcntl_fork()) {    // return child id for parent and 0 for child
-
-            return $pid;             // Parent
-
-        }
-
-        if ($pid < 0) {
-
-            throw new RuntimeException('Failed to fork');
-
-        }
-
-        define('FORK', true);
-
-        // Database::resetConnection();
-        // fclose(STDIN); -- unset
-        register_shutdown_function(static function () {
-            session_abort();
-            posix_kill(posix_getpid(), SIGHUP);
-            exit(0);
-        });
-
-        $closure();
-
-        exit(0);
+        self::executeInChildProcesses($updates);
 
     }
 

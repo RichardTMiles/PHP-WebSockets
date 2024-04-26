@@ -120,15 +120,17 @@
                     $('#message_box').append("<div class=\"system_msg\">onMessage: " + ev.data + "</div>");
                     return;
                 }
-                console.log(ev);
 
-                let msg = JSON.parse(ev.data), //PHP sends Json data
-                    type = msg.type, //message type
+                let msg = JSON.parse(ev.data)?.payload;
+
+                console.log(ev,msg);
+
+                let type = msg.type, //message type
                     umsg = msg.message, //message text
                     uname = msg.name, //user name
                     ucolor = msg.color; //color
 
-                if (type === 'usermsg') {
+                if (!type || type === 'usermsg') {
                     $('#message_box').append("<div><span class=\"user_name\" style=\"color:#" + ucolor + "\">" + uname + "</span> : <span class=\"user_message\">" + umsg + "</span></div>");
                 }
                 if (type === 'system') {
