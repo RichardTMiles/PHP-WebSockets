@@ -7,11 +7,12 @@ This includes the ws:// and wss:// protocol. Simplistic and to the point. I save
 
 # PHP-RFC - https://github.com/php/php-src/pull/14047
 
-Historically a websocket request must be setup by running a PHP cli script as a server that accepts connections on a specific port. This repo was used to initially develop and test `apache_connection_stream` which would allow websockets though Apache CGI without any server configuartion.
+This repo was used to initially develop and test `apache_connection_stream` which would allow websockets though Apache CGI without any server configuartion. Historically a websocket request must be setup by running a PHP-CLI script that starts a server to then accepts connections on a specific port. 
 
+# Starting the WebSocket
 ## PHP-CGI apache2handler
 
-Running the full apache version currectly requires you build the PHP interpreter from source, specifically the branch used for [this pull request](https://github.com/php/php-src/pull/14047). As of now PHP's internal server cli `php -S` does not support WebSockets. You will need to add this porject to your Apache web root.
+Running the full apache version currectly requires you build the PHP interpreter from source, specifically the branch used for [this pull request](https://github.com/php/php-src/pull/14047). I have a [2024 Gist for Mac Users](https://gist.github.com/RichardTMiles/ebf6ce2758bf3f11469d25463092465a). Note: many tutorials exist. If the proposal becomes standard compilation will no longer be nessasary. As of now PHP's internal server cli `php -S` does not support WebSockets. You will need to add this project to your Apache web root. It is assumed that Apache is set to serve `index.php` as the default request, which would be the assumed behavior on an Apache PHP enabled server. Both requests (HTTP GET, and HTTP Upgrate WebSocket) will have the appropriate headers returned. The Upgrade request will persist as expected while the GET request will terminate after the HTML data is served.
 
 ## PHP-CLI
 Running the PHP WebSocket server is done using the following commands in two seperate shells.
