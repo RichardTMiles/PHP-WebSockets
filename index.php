@@ -533,7 +533,7 @@ new class($argv ??= []) {
 
         if (false === $read) {
 
-            $socket = self::ensureConvertToSocket(self::$socket);
+            $socket = self::ensureConvertToSocket($resource);
 
             return [
                 'socketStatus' => stream_get_meta_data($resource),
