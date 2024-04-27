@@ -14,6 +14,7 @@ This repo was used to initially develop and test `apache_connection_stream` whic
 
 Running the full apache version currectly requires you build the PHP interpreter from source, specifically the branch used for [this pull request](https://github.com/php/php-src/pull/14047). I have a [2024 Gist for Mac Users](https://gist.github.com/RichardTMiles/ebf6ce2758bf3f11469d25463092465a). Note: many tutorials exist. If the proposal becomes standard compilation will no longer be nessasary. You have two options for running:
 - `php -S localhost:8888 index.php`
+    - **Note:** When the websocket connects to the server, you must hit enter (new line) explicitly in the terminal with `php -S`. This is considered a small bug, and is yet to be fixed.
 - Add this project to your Apache web root. It is assumed that Apache is set to serve `index.php` as the default request, which would be the assumed behavior on an Apache PHP enabled server. Both requests (HTTP GET, and HTTP Upgrate WebSocket) will have the appropriate headers returned. The Upgrade request will persist as expected while the GET request will terminate after the HTML data is served.
 
 **Note:** Either of the CGI implimentations, aka ways to run listed above, are actually implemted diffrently in `C` code. It is much better and more powerful to run this example in `Apache` as the `PHP` server context is single threaded and thus unable to run on multiple browsers at a time.
