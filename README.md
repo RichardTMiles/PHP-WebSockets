@@ -28,7 +28,7 @@ Running the PHP WebSocket server is done using the following commands in two sep
 This will allow you to visit the chat demo on your local web browser.
 
 ### CLI Server caviates 
-To setup this process in an Apache WebServer you will need the `mod_proxy` and `mod_proxy_wstunnel` modules installed. You can then add the following directive to your `.htaccess` files. Note: htaccess overrides will need to be enabled.
+To setup this process in an Apache WebServer you will need the `mod_proxy` and `mod_proxy_wstunnel` modules installed. You can then add the following directive to your `.htaccess` files. **Note:** htaccess overrides will need to be enabled.
 
 ```
     RewriteCond %{HTTP:Connection} Upgrade [NC]
