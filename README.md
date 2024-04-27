@@ -45,7 +45,8 @@ This will cause apache to proxy all requests to the PHP WebSocket server. If SSL
 
 # Complexities 
 
-I've been developing websockets for years and I have a few tips for making informed decision of your implementation.
+I've been developing websockets for years and I have a few tips for making informed decision of your implementation. Here's a few complex senarios to ponder.
 
-- Websockets create a single persistent connection to a single server. When auto-scaling is involved
-
+- Websockets create a single persistent connection to a single server. When auto-scaling is involved, where multiple servers may handle a connection. When a user needs to update everone they may need to communicate across servers.
+- Memory managment is critical, you should only process what is needed on the main thread. Forking when actually processing data is a very good idea.
+- You can choose wheater to handle all connections in a singel thread `CLI`, or use `CGI` to have a single thread per user. It is currently unclear as to the best implementation, but specific use cases may need to choose one or the other. The immediate trade off is the convience of sending global updates which is easier in CLI, or speed which **could** potentially be faster with `CGI`. This is pretty arbitrary and is most likely dependant on number of connection active vs logic cpu's available.
