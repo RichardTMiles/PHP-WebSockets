@@ -43,4 +43,9 @@ This will cause apache to proxy all requests to the PHP WebSocket server. If SSL
 
 ^ Throw a star up there!
 
+# Complexities 
+
+I've been developing websockets for years and I have a few tips for making informed decision of your implementation.
+
+- Websockets create a single persistent connection to a single server. When auto-scaling is involved
 
