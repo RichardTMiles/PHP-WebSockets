@@ -17,7 +17,7 @@ Running the full apache version currectly requires you build the PHP interpreter
     - **Note:** When the websocket connects to the server, you must hit enter (new line) explicitly in the terminal with `php -S`. This is considered a small bug, and is yet to be fixed.
 - Add this project to your Apache web root. It is assumed that Apache is set to serve `index.php` as the default request, which would be the assumed behavior on an Apache PHP enabled server. Both requests (HTTP GET, and HTTP Upgrate WebSocket) will have the appropriate headers returned. The Upgrade request will persist as expected while the GET request will terminate after the HTML data is served.
 
-**Note:** Either of the CGI implimentations, aka ways to run listed above, are actually implemted diffrently in `C` code. It is much better and more powerful to run this example in `Apache` as the `PHP` server context is single threaded and thus unable to run on multiple browsers at a time.
+**Note:** Both of the CGI implimentations listed above are actually implemted diffrently in PHP-SRC's `C` code. It is much better and more powerful to run this example in `Apache` as the `PHP` server context is single threaded and thus unable to run on multiple browsers at a time.
 
 ## PHP-CLI
 Running the PHP WebSocket server is done using the following commands in two seperate shells.
