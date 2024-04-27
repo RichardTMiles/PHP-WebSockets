@@ -7,7 +7,7 @@ This includes the ws:// and wss:// protocol. Simplistic and to the point. I save
 
 # PHP-RFC - https://github.com/php/php-src/pull/14047
 
-This repo was used to initially develop and test `apache_connection_stream` which would allow websockets though Apache CGI without any server configuartion. Historically a websocket request must be setup by running a PHP-CLI script that starts a server to then accepts connections on a specific port. 
+This repo was used to develop and test `apache_connection_stream()` which would allow websockets though Apache CGI without any server configuartion. Historically a websocket request must be setup by running a PHP-CLI script that starts a server to then accepts connections on a specific port. It contains both what is standard and what is not.
 
 # Starting the WebSocket
 ## PHP-CGI apache2handler
