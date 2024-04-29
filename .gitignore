@@ -2,3 +2,4 @@
 logs/
 tmp/
 *.iml
+.DS_Store
